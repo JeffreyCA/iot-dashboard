@@ -1,0 +1,9 @@
+# Build folder
+.build/
+
+.azurecomponent/
+
+# VS Code files
+c_cpp_properties.json
+
+*.code-workspace
