@@ -1,1 +1,0 @@
-# Dashboard for IoT DevKit
