@@ -1,13 +1,12 @@
-#include "Arduino.h";
+#include "Arduino.h"
 
-#include "AZ3166WiFi.h";
-#include "RGB_LED.h";
-#include "arduinojson.h";
-#include "http_client.h";
+#include "AZ3166WiFi.h"
+#include "arduinojson.h"
+#include "http_client.h"
 
-#include "api.h";
-#include "config.h";
-#include "splash.h";
+#include "api.h"
+#include "config.h"
+#include "splash.h"
 
 static const String endpoint =
     (String(FUNCTION_URL) + "?code=" + FUNCTION_KEY +
@@ -21,7 +20,6 @@ static bool has_wifi = false;
 static bool http_error = false;
 
 static unsigned long previous_ms = 0;
-static int led_countdown = 0;
 static int update_rate_countdown = 0;
 static int update_view_countdown = 0;
 
@@ -31,13 +29,10 @@ static const char *condition = "";
 static float temp = 0.0;
 
 static int current_view = 0;
-static bool is_led_on = false;
 static bool is_refreshing = false;
 
 static int last_button_a_state = HIGH;
 static int last_button_b_state = HIGH;
-
-RGB_LED rgbLed;
 
 // Establish wifi connection.
 static void init_wifi() {
@@ -55,6 +50,7 @@ static void init_wifi() {
 
 // Retrieve data from Azure Function.
 static void refresh_data() {
+  is_refreshing = true;
   HTTPClient *httpClient = new HTTPClient(SSL_CA_PEM, HTTP_GET, endpoint_url);
   const Http_Response *result = httpClient->send();
   Serial.println(endpoint_url);
@@ -79,7 +75,6 @@ static void refresh_data() {
     } else {
       // Success
       http_error = false;
-      is_led_on = true;
 
       float new_rate = doc["exchange_rate"];
       float new_stock_price = doc["stock_price"];
@@ -106,7 +101,6 @@ static void refresh_data() {
     Serial.println();
 
     // Reset countdown values
-    led_countdown = LED_FLASH_INTERVAL;
     update_rate_countdown = SUCCESS_REFRESH_INTERVAL;
     update_view_countdown = CHANGE_VIEW_INTERVAL;
   }
@@ -121,7 +115,8 @@ static void show_rate() {
   char subheader_buffer[MAX_LINE_BUFFER_SIZE];
 
   sprintf(header_buffer, "%s Rate", CURRENCY_PAIR);
-  sprintf(subheader_buffer, "%s = %.4f %s", CURRENCY_1, rate, CURRENCY_2);
+  sprintf(subheader_buffer, "%s = %.4f %s", BASE_CURRENCY, rate,
+          QUOTE_CURRENCY);
 
   Screen.print(0, header_buffer);
   Screen.print(1, subheader_buffer);
@@ -164,7 +159,7 @@ static void show_view() {
 }
 
 // Refresh data and show current view
-static void update_and_show_view() {
+static void refresh_and_show_view() {
   refresh_data();
   show_view();
 }
@@ -182,59 +177,46 @@ void setup() {
   delay(SPLASH_DURATION_MS);
   Screen.clean();
 
-  has_wifi = false;
-  init_wifi();
-
   pinMode(USER_BUTTON_A, INPUT);
   pinMode(USER_BUTTON_B, INPUT);
 
+  last_button_a_state = digitalRead(USER_BUTTON_A);
   last_button_b_state = digitalRead(USER_BUTTON_B);
 
-  if (has_wifi) {
-    // Load data for first time
-    Screen.print(3, "Loading...");
-    refresh_data();
+  init_wifi();
 
-    if (http_error) {
-      Screen.print(1, "Error");
-    } else {
-      show_view();
-    }
-  } else {
+  while (!has_wifi) {
     // No wifi connection, retry later
     Serial.print("Retrying in ");
     Serial.print(connect_wifi_backoff_ms);
     Serial.println(" milliseconds...");
     delay(connect_wifi_backoff_ms);
+    init_wifi();
+    connect_wifi_backoff_ms =
+        (long)(connect_wifi_backoff_ms * WIFI_RETRY_MULT_FACTOR);
+  }
+
+  // Load data for first time
+  connect_wifi_backoff_ms = WIFI_RETRY_STARTING_INTERVAL_MS;
+  Screen.print(0, "Connected.");
+  Screen.print(3, "Loading...");
+  refresh_data();
+
+  if (http_error) {
+    Screen.print(1, "Error");
+  } else {
+    show_view();
   }
 }
 
 void loop() {
   // Check Internet connection
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("not connected");
-
-    if (has_wifi) {
-      // Just lost connection, so disconnect and try to reconnect
-      has_wifi = false;
-      WiFi.disconnect();
-      delay(1000);
-    }
-
-    init_wifi();
-
-    if (!has_wifi) {
-      // Still no wifi after trying to connect, increase backoff delay
-      connect_wifi_backoff_ms =
-          (long)(connect_wifi_backoff_ms * WIFI_RETRY_MULT_FACTOR);
-      Serial.print("Retrying in ");
-      Serial.print(connect_wifi_backoff_ms);
-      Serial.println(" milliseconds...");
-      delay(connect_wifi_backoff_ms);
-    } else {
-      // Successfully connected, reset backoff delay
-      connect_wifi_backoff_ms = WIFI_RETRY_STARTING_INTERVAL_MS;
-    }
+    Serial.println("Lost wifi connection");
+    Screen.clean();
+    Screen.print(0, "Rebooting...");
+    delay(2000);
+    SystemReboot();
     return;
   }
 
@@ -245,7 +227,6 @@ void loop() {
     last_button_a_state = LOW;
     update_view_countdown = CHANGE_VIEW_INTERVAL;
     current_view = (current_view + 1) % 3;
-    rgbLed.turnOff();
     show_view();
   } else if (last_button_a_state == LOW && digitalRead(USER_BUTTON_A) == HIGH) {
     last_button_a_state = HIGH;
@@ -256,42 +237,26 @@ void loop() {
     last_button_b_state = LOW;
 
     if (!is_refreshing) {
-      is_refreshing = true;
       Serial.println("Forced refresh");
       Screen.print(3, "Refreshing...");
-      rgbLed.turnOff();
-      update_and_show_view();
+      refresh_and_show_view();
     }
   } else if (last_button_b_state == LOW && digitalRead(USER_BUTTON_B) == HIGH) {
     last_button_b_state = HIGH;
-  }
-
-  // Handle LED flash on refresh
-  if (is_led_on && LED_ENABLED) {
-    rgbLed.setColor(0, 0, 255);
-  } else {
-    rgbLed.turnOff();
   }
 
   // Handle events per tick (second)
   if (current_ms - previous_ms >= UPDATE_INTERVAL_MS) {
     previous_ms = current_ms;
 
-    led_countdown--;
     update_rate_countdown--;
     update_view_countdown--;
-
-    if (led_countdown < 0) {
-      is_led_on = false;
-    }
 
     // Time for data refresh
     if (update_rate_countdown < 0) {
       if (!is_refreshing) {
-        is_refreshing = true;
         Screen.print(3, "Refreshing...");
-        rgbLed.turnOff();
-        update_and_show_view();
+        refresh_and_show_view();
       }
     }
 
