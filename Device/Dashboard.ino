@@ -9,69 +9,75 @@
 #include "config.h";
 #include "splash.h";
 
-static const String endpoint = (String(FUNCTION_URL) + "?code=" + FUNCTION_KEY +
-                   "&currencypair=" + CURRENCY_PAIR + "&stock=" + STOCK_TICKER +
-                   "&location=" + WEATHER_LOCATION);
+static const String endpoint =
+    (String(FUNCTION_URL) + "?code=" + FUNCTION_KEY +
+     "&currencypair=" + CURRENCY_PAIR + "&stock=" + STOCK_TICKER +
+     "&location=" + WEATHER_LOCATION);
 
 static const char *endpoint_url = endpoint.c_str();
 
+static long connect_wifi_backoff_ms = WIFI_RETRY_STARTING_INTERVAL_MS;
 static bool has_wifi = false;
 static bool http_error = false;
 
 static unsigned long previous_ms = 0;
 static int led_countdown = 0;
 static int update_rate_countdown = 0;
+static int update_view_countdown = 0;
 
 static float rate = 0.0;
 static float stock_price = 0.0;
 static const char *condition = "";
 static float temp = 0.0;
 
+static int current_view = 0;
 static bool is_led_on = false;
 static bool is_refreshing = false;
 
 static int last_button_a_state = HIGH;
 static int last_button_b_state = HIGH;
 
-static int current_view = 0;
-
 RGB_LED rgbLed;
 
 // Establish wifi connection.
 static void init_wifi() {
   Screen.clean();
-  Screen.print(0, "Connecting to Wifi...", true);
+  Screen.print(0, "Connecting...");
 
   if (WiFi.begin() == WL_CONNECTED) {
     has_wifi = true;
+    Screen.clean();
   } else {
     has_wifi = false;
-    Screen.print(0, "No Wi-Fi\r\n ");
+    Screen.print(0, "No Wi-Fi");
   }
 }
 
-static void update_info() {
-  const char *endpoint_url = endpoint.c_str();
+// Retrieve data from Azure Function.
+static void refresh_data() {
   HTTPClient *httpClient = new HTTPClient(SSL_CA_PEM, HTTP_GET, endpoint_url);
   const Http_Response *result = httpClient->send();
-
   Serial.println(endpoint_url);
 
   if (result == NULL) {
+    // Request failed, retry later
     http_error = true;
     Serial.print("Error Code: ");
     Serial.println(httpClient->get_error());
     update_rate_countdown = FAIL_REFRESH_INTERVAL;
   } else {
+    // Request succeeded
     const char *response = result->body;
     StaticJsonDocument<256> doc;
     DeserializationError err = deserializeJson(doc, response);
 
     if (err) {
+      // Deserialization failed
       http_error = true;
       Serial.print(F("deserializeJson() failed with code"));
       Serial.println(err.c_str());
     } else {
+      // Success
       http_error = false;
       is_led_on = true;
 
@@ -99,14 +105,17 @@ static void update_info() {
     Serial.println(temp, 1);
     Serial.println();
 
+    // Reset countdown values
     led_countdown = LED_FLASH_INTERVAL;
-    update_rate_countdown = REFRESH_INTERVAL;
+    update_rate_countdown = SUCCESS_REFRESH_INTERVAL;
+    update_view_countdown = CHANGE_VIEW_INTERVAL;
   }
 
   is_refreshing = false;
   delete httpClient;
 }
 
+// Show exchange rate
 static void show_rate() {
   char header_buffer[MAX_LINE_BUFFER_SIZE];
   char subheader_buffer[MAX_LINE_BUFFER_SIZE];
@@ -118,6 +127,7 @@ static void show_rate() {
   Screen.print(1, subheader_buffer);
 }
 
+// Show stock price
 static void show_stock() {
   char header_buffer[MAX_LINE_BUFFER_SIZE];
   char subheader_buffer[12];
@@ -129,6 +139,7 @@ static void show_stock() {
   Screen.print(1, subheader_buffer);
 }
 
+// Show weather info
 static void show_weather() {
   char subheader_buffer[8];
   sprintf(subheader_buffer, "%.1f C", temp);
@@ -137,6 +148,7 @@ static void show_weather() {
   Screen.print(1, subheader_buffer);
 }
 
+// Show current view
 static void show_view() {
   if (current_view == 0) {
     show_rate();
@@ -145,18 +157,19 @@ static void show_view() {
   } else if (current_view == 2) {
     show_weather();
   }
-}
-
-static void update_and_show_view() {
-  update_info();
 
   if (http_error) {
     Screen.print(1, "Error");
-  } else {
-    show_view();
   }
 }
 
+// Refresh data and show current view
+static void update_and_show_view() {
+  refresh_data();
+  show_view();
+}
+
+// Show countdown timer in lower left corner
 static void show_countdown() {
   char tick_buffer[8];
   sprintf(tick_buffer, "%d", update_rate_countdown);
@@ -178,46 +191,73 @@ void setup() {
   last_button_b_state = digitalRead(USER_BUTTON_B);
 
   if (has_wifi) {
-    Screen.clean();
-    update_info();
+    // Load data for first time
+    Screen.print(3, "Loading...");
+    refresh_data();
 
     if (http_error) {
       Screen.print(1, "Error");
     } else {
       show_view();
     }
+  } else {
+    // No wifi connection, retry later
+    Serial.print("Retrying in ");
+    Serial.print(connect_wifi_backoff_ms);
+    Serial.println(" milliseconds...");
+    delay(connect_wifi_backoff_ms);
   }
 }
 
 void loop() {
-  if (!has_wifi) {
-    has_wifi = false;
+  // Check Internet connection
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("not connected");
+
+    if (has_wifi) {
+      // Just lost connection, so disconnect and try to reconnect
+      has_wifi = false;
+      WiFi.disconnect();
+      delay(1000);
+    }
+
     init_wifi();
+
+    if (!has_wifi) {
+      // Still no wifi after trying to connect, increase backoff delay
+      connect_wifi_backoff_ms =
+          (long)(connect_wifi_backoff_ms * WIFI_RETRY_MULT_FACTOR);
+      Serial.print("Retrying in ");
+      Serial.print(connect_wifi_backoff_ms);
+      Serial.println(" milliseconds...");
+      delay(connect_wifi_backoff_ms);
+    } else {
+      // Successfully connected, reset backoff delay
+      connect_wifi_backoff_ms = WIFI_RETRY_STARTING_INTERVAL_MS;
+    }
     return;
   }
 
   unsigned long current_ms = millis();
 
+  // Handle button A press (switching views)
   if (last_button_a_state == HIGH && digitalRead(USER_BUTTON_A) == LOW) {
     last_button_a_state = LOW;
-
+    update_view_countdown = CHANGE_VIEW_INTERVAL;
     current_view = (current_view + 1) % 3;
-
-    Serial.print("Switching to view: ");
-    Serial.println(current_view);
-
     rgbLed.turnOff();
     show_view();
   } else if (last_button_a_state == LOW && digitalRead(USER_BUTTON_A) == HIGH) {
     last_button_a_state = HIGH;
   }
 
+  // Handle button B press (refreshing data)
   if (last_button_b_state == HIGH && digitalRead(USER_BUTTON_B) == LOW) {
     last_button_b_state = LOW;
 
     if (!is_refreshing) {
       is_refreshing = true;
-      Serial.println("Force refresh...");
+      Serial.println("Forced refresh");
       Screen.print(3, "Refreshing...");
       rgbLed.turnOff();
       update_and_show_view();
@@ -226,18 +266,26 @@ void loop() {
     last_button_b_state = HIGH;
   }
 
-  if (is_led_on) {
+  // Handle LED flash on refresh
+  if (is_led_on && LED_ENABLED) {
     rgbLed.setColor(0, 0, 255);
   } else {
     rgbLed.turnOff();
   }
 
+  // Handle events per tick (second)
   if (current_ms - previous_ms >= UPDATE_INTERVAL_MS) {
     previous_ms = current_ms;
 
-    update_rate_countdown--;
     led_countdown--;
+    update_rate_countdown--;
+    update_view_countdown--;
 
+    if (led_countdown < 0) {
+      is_led_on = false;
+    }
+
+    // Time for data refresh
     if (update_rate_countdown < 0) {
       if (!is_refreshing) {
         is_refreshing = true;
@@ -247,10 +295,14 @@ void loop() {
       }
     }
 
-    if (led_countdown < 0) {
-      is_led_on = false;
+    // Time for view change
+    if (update_view_countdown < 0) {
+      update_view_countdown = CHANGE_VIEW_INTERVAL;
+      current_view = (current_view + 1) % 3;
+      show_view();
     }
 
+    // Update countdown timer
     show_countdown();
   }
 }
