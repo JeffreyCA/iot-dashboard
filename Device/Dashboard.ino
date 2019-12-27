@@ -23,8 +23,10 @@ static int update_view_countdown = 0;
 
 static float rate = 0.0;
 static float stock_price = 0.0;
-static const char *condition = "";
+static char condition[MAX_LINE_BUFFER_SIZE];
 static float temp = 0.0;
+static int temp_low = 0;
+static int temp_high = 0;
 
 static int current_view = 0;
 static bool is_refreshing = false;
@@ -74,15 +76,12 @@ static void refresh_data() {
       // Success
       http_error = false;
 
-      float new_rate = doc["exchange_rate"];
-      float new_stock_price = doc["stock_price"];
-      const char *new_condition = doc["condition"];
-      float new_temp = doc["temp"];
-
-      rate = new_rate;
-      stock_price = new_stock_price;
-      condition = new_condition;
-      temp = new_temp;
+      rate = doc["exchange_rate"];
+      stock_price = doc["stock_price"];
+      strcpy(condition, doc["condition"]);
+      temp = doc["temp"];
+      temp_low = (int)lround(doc["temp_min"]);
+      temp_high = (int)lround(doc["temp_max"]);
     }
 
     Serial.print("Rate: ");
@@ -96,6 +95,13 @@ static void refresh_data() {
 
     Serial.print("Temp: ");
     Serial.println(temp, 1);
+
+    Serial.print("Low: ");
+    Serial.println(temp_low);
+
+    Serial.print("High: ");
+    Serial.println(temp_high);
+
     Serial.println();
 
     // Reset countdown values
@@ -105,6 +111,11 @@ static void refresh_data() {
 
   is_refreshing = false;
   delete httpClient;
+}
+
+// Clear screen row
+static void clear_row(int row) {
+  Screen.print(row, " ");
 }
 
 // Show exchange rate
@@ -134,24 +145,28 @@ static void show_stock() {
 
 // Show weather info
 static void show_weather() {
-  char subheader_buffer[8];
-  sprintf(subheader_buffer, "%.1f C", temp);
+  char subheader_buffer[MAX_LINE_BUFFER_SIZE];
+  sprintf(subheader_buffer, "%.1f (L:%d/H:%d)", temp, temp_low, temp_high);
 
   Screen.print(0, WEATHER_LOCATION);
-  Screen.print(1, subheader_buffer);
+  Screen.print(1, condition);
+  Screen.print(2, subheader_buffer);
 }
 
 // Show current view
 static void show_view() {
   if (current_view == 0) {
+    clear_row(2);
     show_rate();
   } else if (current_view == 1) {
+    clear_row(2);
     show_stock();
   } else if (current_view == 2) {
     show_weather();
   }
 
   if (http_error) {
+    clear_row(2);
     Screen.print(1, "Error");
   }
 }
