@@ -18,7 +18,7 @@ static bool has_wifi = false;
 static bool http_error = false;
 
 static unsigned long previous_ms = 0;
-static int update_rate_countdown = 0;
+static int update_data_countdown = 0;
 static int update_view_countdown = 0;
 
 static float rate = 0.0;
@@ -60,7 +60,7 @@ static void refresh_data() {
     http_error = true;
     Serial.print("Error Code: ");
     Serial.println(httpClient->get_error());
-    update_rate_countdown = FAIL_REFRESH_INTERVAL;
+    update_data_countdown = FAIL_REFRESH_INTERVAL;
   } else {
     // Request succeeded
     const char *response = result->body;
@@ -105,7 +105,7 @@ static void refresh_data() {
     Serial.println();
 
     // Reset countdown values
-    update_rate_countdown = SUCCESS_REFRESH_INTERVAL;
+    update_data_countdown = SUCCESS_REFRESH_INTERVAL;
     update_view_countdown = CHANGE_VIEW_INTERVAL;
   }
 
@@ -180,7 +180,7 @@ static void refresh_and_show_view() {
 // Show countdown timer in lower left corner
 static void show_countdown() {
   char tick_buffer[8];
-  sprintf(tick_buffer, "%d", update_rate_countdown);
+  sprintf(tick_buffer, "%d", update_data_countdown);
   Screen.print(3, tick_buffer);
 }
 
@@ -262,11 +262,11 @@ void loop() {
   if (current_ms - previous_ms >= UPDATE_INTERVAL_MS) {
     previous_ms = current_ms;
 
-    update_rate_countdown--;
+    update_data_countdown--;
     update_view_countdown--;
 
     // Time for data refresh
-    if (update_rate_countdown < 0) {
+    if (update_data_countdown < 0) {
       if (!is_refreshing) {
         Screen.print(3, "Refreshing...");
         refresh_and_show_view();
