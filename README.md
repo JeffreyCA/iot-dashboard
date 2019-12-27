@@ -1,6 +1,9 @@
 # IoT-Dashboard
 View forex, stock, and weather information on your MXChip AZ3166 IoT Devkit
 
+| ![Forex view](assets/forex.jpg)  | ![Stock view](assets/stock.jpg) | ![Weather view](assets/weather.jpg) |
+|:---:|:---:|:---:|
+
 ## Requirements
 * [MXChip AZ3166 IoT Devkit](https://aka.ms/iot-devkit-purchase)
 * Active Azure subscription with [`iot-dashboard-functions`](https://github.com/JeffreyCA/iot-dashboard-functions) deployed to Azure Functions
