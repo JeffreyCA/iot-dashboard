@@ -1,5 +1,3 @@
-#include "Arduino.h"
-
 #include "AZ3166WiFi.h"
 #include "arduinojson.h"
 #include "http_client.h"

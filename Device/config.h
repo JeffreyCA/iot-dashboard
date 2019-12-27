@@ -1,26 +1,26 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-// User-configurable values
+// Main parameters
 #define BASE_CURRENCY "USD"
 #define QUOTE_CURRENCY "CAD"
 #define STOCK_TICKER "MSFT"
 #define WEATHER_LOCATION "Toronto"
 
-// Other constants
-#define CURRENCY_PAIR BASE_CURRENCY "/" QUOTE_CURRENCY
-
-#define MAX_LINE_BUFFER_SIZE 17
-#define MAX_BUFFER_SIZE 65
-
-#define SPLASH_DURATION_MS 1500
-#define UPDATE_INTERVAL_MS 1000
-
+// Advanced parameters
 #define CHANGE_VIEW_INTERVAL 4
 #define FAIL_REFRESH_INTERVAL 10
 #define SUCCESS_REFRESH_INTERVAL 120
 
+#define SPLASH_DURATION_MS 1500
+#define UPDATE_INTERVAL_MS 1000
+
 #define WIFI_RETRY_STARTING_INTERVAL_MS 5000
 #define WIFI_RETRY_MULT_FACTOR 1.2f
+
+// Other constants
+#define CURRENCY_PAIR BASE_CURRENCY "/" QUOTE_CURRENCY
+#define MAX_LINE_BUFFER_SIZE 17
+#define MAX_BUFFER_SIZE 65
 
 #endif // CONFIG_H
