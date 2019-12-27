@@ -209,9 +209,9 @@ void setup() {
 
 void loop() {
   // Check Internet connection
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("Lost wifi connection");
+  if (http_error && WiFi.status() != WL_CONNECTED) {
     Screen.clean();
+    Serial.println("Lost wifi connection, rebooting...");
     Screen.print(0, "Rebooting...");
     delay(2000);
     SystemReboot();
